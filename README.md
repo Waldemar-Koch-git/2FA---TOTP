@@ -13,6 +13,7 @@ Desktop-Anwendung für TOTP-basierte Zwei-Faktor-Authentifizierung mit AES-GCM-V
 Ein sicherer Desktop-Authenticator für Zwei-Faktor-Authentifizierung (2FA) mit verschlüsselter lokaler Datenspeicherung.
 
 ## Bebildert
+
 ### Masterpasswort und erstellen der Datenbank
 Bitte die Konfiguration ggf. anpassen. Nicht alle haben genug Arbeitsspeicher oder CPU-Kerne. 
 Wird nur eins von den 3 Einstellungen *Nachträglich* geändert, so ändert sich die Berechnung und das Masterpasswort funktioniert nicht mehr.
@@ -28,18 +29,26 @@ ARGON_PARALLELISM  = 4           # Anzahl paralleler Threads
 
 Datenbank erstellt im gleichen Ordner: `authenticator_data.json`
 ### Neuen Account erstellen
-Untere Knöpfe: Account Hinzufügen
+Untere Knöpfe: Account Hinzufügen.
+
 ![GUI - Add new Account](./images_/2fa_GUI_add_account.jpg)
+
 ### Hinzufügen neuer Daten
-Einfügen der Informationen und im Anschluss auf `OK`
+Einfügen der Informationen und im Anschluss auf `OK`.
+
 ![Create new Account](./images_/2fa_new_account.jpg)
 #### Weitere Accounts 
+
 ![Add new Accounts and overview](./images_/2fa_gui_with_new_account.jpg)
+
 #### 30 Sekunden Token
 Klick auf die \* und das Token wird in die Zwischenablage kopiert!
+
 ![Token](./images_/2fa_gui_with_new_account_token.jpg)
+
 #### Bearbeiten des Accounts
-In der GUI: Rechtsklick → bearbeiten
+In der GUI: Rechtsklick → bearbeiten.
+
 ![Edit Account](./images_/2fa_gui_with_new_account_edit.jpg)
 
 
