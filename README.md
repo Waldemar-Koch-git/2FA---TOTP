@@ -12,6 +12,37 @@ Desktop-Anwendung für TOTP-basierte Zwei-Faktor-Authentifizierung mit AES-GCM-V
 
 Ein sicherer Desktop-Authenticator für Zwei-Faktor-Authentifizierung (2FA) mit verschlüsselter lokaler Datenspeicherung.
 
+## Bebildert
+### Masterpasswort und erstellen der Datenbank
+Bitte die Konfiguration ggf. anpassen. Nicht alle haben genug Arbeitsspeicher oder CPU-Kerne. 
+Wird nur eins von den 3 Einstellungen *Nachträglich* geändert, so ändert sich die Berechnung und das Masterpasswort funktioniert nicht mehr.
+Also bitte vor dem erstellen einer Datenbank (`authenticator_data.json`) diese Einstellungen anpassen!
+
+Starten mit vorliegenden Einstellungen
+```python
+ARGON_TIME_COST    = 20          # CPU-Aufwand für Argon2
+ARGON_MEMORY_COST  = 1024 * 1024 # 1 GiB Speicher
+ARGON_PARALLELISM  = 4           # Anzahl paralleler Threads
+```
+![Set Masterpassword](./images_/2fa_master_pw.jpg) → ![Repeat Masterpassword](./images_/2fa_master_pw_b.jpg)
+Datenbank erstellt im gleichen Ordner: `authenticator_data.json`
+### Neuen Account erstellen
+Untere Knöpfe: Account Hinzufügen
+![GUI - Add new Account](./images_/2fa_GUI_add_account.jpg)
+### Hinzufügen neuer Daten
+Einfügen der Informationen und im Anschluss auf `OK`
+![Create new Account](./images_/2fa_new_account.jpg)
+#### Weitere Accounts 
+![Add new Accounts and overview](./images_/2fa_gui_with_new_account.jpg)
+#### 30 Sekunden Token
+Klick auf die \* und das Token wird in die Zwischenablage kopiert!
+![Token](./images_/2fa_gui_with_new_account_token.jpg)
+#### Bearbeiten des Accounts
+In der GUI: Rechtsklick → bearbeiten
+![Edit Account](./images_/2fa_gui_with_new_account_edit.jpg)
+
+
+
 ## 🔐 Hauptmerkmale
 
 ### Sicherheit
@@ -75,13 +106,12 @@ Die verschlüsselte Datenbank wird als `authenticator_data.json` im Programmverz
 
 ## 🔧 Konfiguration
 
-In der Datei können folgende Parameter angepasst werden:
+In der Datei sollten folgende Parameter angepasst werden:
 
 ```python
 ARGON_TIME_COST    = 20          # CPU-Aufwand für Argon2
 ARGON_MEMORY_COST  = 1024 * 1024 # 1 GiB Speicher
 ARGON_PARALLELISM  = 4           # Anzahl paralleler Threads
-COUNTDOWN_START    = 30          # Sekunden bis Code-Wechsel
 ```
 
 **⚠️ Achtung**: Änderungen an den Verschlüsselungsparametern machen bestehende Datenbanken unbrauchbar!
