@@ -56,6 +56,10 @@ pip install pyotp cryptography argon2-cffi
 
 2. Programm starten:
    ```bash
+   python 2FA.py
+   ```
+   oder umbenennen in `2FA.pyw` → kein Terminal mehr.
+   ```bash
    python 2FA.pyw
    ```
 
