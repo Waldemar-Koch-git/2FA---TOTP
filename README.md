@@ -25,6 +25,7 @@ ARGON_MEMORY_COST  = 1024 * 1024 # 1 GiB Speicher
 ARGON_PARALLELISM  = 4           # Anzahl paralleler Threads
 ```
 ![Set Masterpassword](./images_/2fa_master_pw.jpg) → ![Repeat Masterpassword](./images_/2fa_master_pw_b.jpg)
+
 Datenbank erstellt im gleichen Ordner: `authenticator_data.json`
 ### Neuen Account erstellen
 Untere Knöpfe: Account Hinzufügen
