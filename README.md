@@ -126,7 +126,14 @@ pip install pillow pyzbar
 
 ## 🚀 Installation & Start
 
-1. Abhängigkeiten installieren:
+
+1. Für volle Funktionalität
+   ```bash
+   pip install pyotp cryptography argon2-cffi pillow pyzbar
+   ```
+   
+   Oder Separat: 
+   nur notwendige Abhängigkeiten installieren:
    ```bash
    pip install pyotp cryptography argon2-cffi
    ```
@@ -143,6 +150,7 @@ pip install pillow pyzbar
    ```bash
    python 2FA.pyw
    ```
+   oder einfach via Doppelklick auf diese Datei/Anwendung.
 
 3. Beim ersten Start Master-Passwort festlegen
 
