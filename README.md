@@ -2,7 +2,7 @@
 
 **Sicherer 2FA-Authenticator mit verschlüsselter Datenspeicherung**
 
-Desktop-Anwendung für TOTP-basierte Zwei-Faktor-Authentifizierung mit AES-GCM-Verschlüsselung und Argon2-Key-Derivation. Speichert alle Accounts lokal und verschlüsselt mit Master-Passwort. Unterstützt Import/Export, automatisches Lock-out bei Inaktivität und anpassbare Oberfläche.
+Desktop-Anwendung für TOTP-basierte Zwei-Faktor-Authentifizierung mit AES-GCM-Verschlüsselung und Argon2-Key-Derivation. Speichert alle Accounts lokal und verschlüsselt mit Master-Passwort. Unterstützt Import/Export, QR-Code-Scan, automatisches Lock-out bei Inaktivität und anpassbare Oberfläche.
 
 ---
 
@@ -15,7 +15,7 @@ Ein sicherer Desktop-Authenticator für Zwei-Faktor-Authentifizierung (2FA) mit 
 ## Bebildert
 
 ### Masterpasswort und erstellen der Datenbank
-Bitte die Konfiguration ggf. anpassen. Nicht alle haben genug Arbeitsspeicher oder CPU-Kerne. 
+Bitte die Konfiguration ggf. anpassen. Nicht alle haben genug Arbeitsspeicher oder CPU-Kerne.
 Wird nur eins von den 3 Einstellungen *Nachträglich* geändert, so ändert sich die Berechnung und das Masterpasswort funktioniert nicht mehr.
 Also bitte vor dem erstellen einer Datenbank (`authenticator_data.json`) diese Einstellungen anpassen!
 
@@ -28,6 +28,7 @@ ARGON_PARALLELISM  = 4           # Anzahl paralleler Threads
 ![Set Masterpassword](./images_/2fa_master_pw.jpg) → ![Repeat Masterpassword](./images_/2fa_master_pw_b.jpg)
 
 Datenbank erstellt im gleichen Ordner: `authenticator_data.json`
+
 ### Neuen Account erstellen
 Untere Knöpfe: Account Hinzufügen.
 
@@ -36,8 +37,20 @@ Untere Knöpfe: Account Hinzufügen.
 ### Hinzufügen neuer Daten
 Einfügen der Informationen und im Anschluss auf `OK`.
 
+> **Hinweis:** Die Felder „Information" und „Firma (Issuer)" sind optional — nur der Kontoname und der TOTP-Schlüssel sind Pflichtfelder.
+
 ![Create new Account](./images_/2fa_new_account.jpg)
-#### Weitere Accounts 
+
+#### QR-Code scannen (neu)
+Im Hinzufügen- und Bearbeiten-Dialog stehen zwei Schaltflächen bereit:
+
+- **📷 Von QR-Code scannen (Screenshot)** – Markiert per Maus einen Bereich auf dem Bildschirm. Der QR-Code wird sofort ausgelesen und alle Felder automatisch ausgefüllt.
+- **🖼 Von Bilddatei** – Öffnet eine Bilddatei (PNG, JPG, BMP …) und liest den QR-Code daraus.
+
+> **Voraussetzung:** `pip install pillow pyzbar`
+> Sind diese Pakete nicht installiert, werden die Schaltflächen nicht angezeigt – das Programm läuft weiterhin normal.
+
+#### Weitere Accounts
 
 ![Add new Accounts and overview](./images_/2fa_gui_with_new_account.jpg)
 
@@ -47,7 +60,11 @@ Klick auf die \* und das Token wird in die Zwischenablage kopiert!
 ![Token](./images_/2fa_gui_with_new_account_token.jpg)
 
 #### Bearbeiten des Accounts
-In der GUI: Rechtsklick → bearbeiten.
+In der GUI: Rechtsklick → Bearbeiten.
+
+- Alle Felder können geändert werden, einschließlich des TOTP-Schlüssels.
+- Das Schlüssel-Feld ist standardmäßig maskiert. Mit „Schlüssel anzeigen?" wird der Klartext eingeblendet – erst dann kann er bearbeitet werden.
+- Auch im Bearbeitungs-Dialog steht der QR-Code-Scanner zur Verfügung.
 
 ![Edit Account](./images_/2fa_gui_with_new_account_edit.jpg)
 
@@ -58,13 +75,14 @@ In der GUI: Rechtsklick → bearbeiten.
 ### Sicherheit
 - **AES-GCM-Verschlüsselung**: Alle Daten werden mit modernster AEAD-Verschlüsselung gesichert
 - **Argon2-Key-Derivation**: Robuste Passwort-Hashing-Funktion mit konfigurierbaren Parametern
-- **Automatisches Lock-out**: Sperrt sich nach 5 Minuten Inaktivität
+- **Automatisches Lock-out**: Sperrt sich nach 5 Minuten Inaktivität; Clipboard wird dabei geleert
 - **Lokale Datenspeicherung**: Keine Cloud, alle Daten bleiben auf Ihrem Gerät
 
 ### Funktionen
 - **TOTP-Unterstützung**: Kompatibel mit gängigen 2FA-Diensten (Google, Microsoft, GitHub, etc.)
+- **QR-Code-Scan**: Direkt per Screenshot-Auswahl oder Bilddatei – Felder werden automatisch ausgefüllt
 - **Mehrere Hash-Algorithmen**: SHA1, SHA256, SHA512
-- **Flexible Code-Längen**: 4-8 Ziffern
+- **Flexible Code-Längen**: 4–8 Ziffern
 - **Import/Export**: Daten-Backup mit optionaler Verschlüsselung
 - **Live-Suche**: Schnelles Filtern nach Name, Firma oder Information
 - **Countdown-Timer**: Zeigt verbleibende Zeit bis zum Code-Wechsel an
@@ -75,18 +93,36 @@ In der GUI: Rechtsklick → bearbeiten.
 - **Übersichtliche Struktur**: Sortierung nach Account, Firma und Information
 - **Kontextmenü**: Schnelles Bearbeiten per Rechtsklick
 - **Master-Passwort ändern**: Jederzeit neue Verschlüsselung möglich
+- **Optionale Felder**: Information und Firma sind nicht zwingend erforderlich
 
 ## 📋 Voraussetzungen
 
+### Volle Funktionalität:
+```bash
+pip install pyotp cryptography argon2-cffi pillow pyzbar
+```
+
+### Minimum:
 ```bash
 pip install pyotp cryptography argon2-cffi
 ```
 
+### (Optional) Für QR-Code-Scan:
+```bash
+pip install pillow pyzbar
+```
+
+### Bibliothekenbeschreibungen
+
 **Erforderliche Python-Pakete:**
-- `pyotp` - TOTP-Code-Generierung
-- `cryptography` - AES-GCM-Verschlüsselung
-- `argon2-cffi` - Sichere Key-Derivation
-- `tkinter` - GUI (meist vorinstalliert)
+- `pyotp` – TOTP-Code-Generierung
+- `cryptography` – AES-GCM-Verschlüsselung
+- `argon2-cffi` – Sichere Key-Derivation
+- `tkinter` – GUI (meist vorinstalliert)
+
+**Optionale Pakete (für QR-Code-Scan):**
+- `pillow` – Bildverarbeitung und Screenshots
+- `pyzbar` – QR-Code- und Barcode-Dekodierung
 
 ## 🚀 Installation & Start
 
@@ -94,12 +130,16 @@ pip install pyotp cryptography argon2-cffi
    ```bash
    pip install pyotp cryptography argon2-cffi
    ```
+   Optional für QR-Scan:
+   ```bash
+   pip install pillow pyzbar
+   ```
 
 2. Programm starten:
    ```bash
    python 2FA.py
    ```
-   oder umbenennen in `2FA.pyw` → kein Terminal mehr.
+   oder umbenennen in `2FA.pyw` → kein Terminal mehr (empfohlen).
    ```bash
    python 2FA.pyw
    ```
@@ -136,6 +176,7 @@ ARGON_PARALLELISM  = 4           # Anzahl paralleler Threads
 - Unterstützt eigenes verschlüsseltes Format
 - Kompatibel mit Google Authenticator Export-Format
 - Accounts können hinzugefügt oder ersetzt werden
+- Bei verschlüsselten Importen mit fremdem Passwort: das eigene Master-Passwort wird dabei **nicht** verändert
 
 ## 🛡️ Sicherheitshinweise
 
@@ -143,7 +184,8 @@ ARGON_PARALLELISM  = 4           # Anzahl paralleler Threads
 - Regelmäßige Backups erstellen (Export-Funktion nutzen)
 - Master-Passwort sicher verwahren
 - Keine Passwort-Wiederherstellung möglich
-- Inaktivitäts-Timeout nicht deaktivierbar (Sicherheitsfeature)
+- Inaktivitäts-Timeout nicht deaktivierbar (Sicherheitsfeature). Zeit (cooldown) lässt sich aber in der editieren: `self.inactivity_timeout`
+- Zwischenablage wird beim Sperren, beim Beenden und nach 5 Sekunden automatisch geleert
 
 ## 📝 Lizenz
 
@@ -163,5 +205,5 @@ Diese Software wird "wie besehen" bereitgestellt, ohne jegliche Garantie. Nutzen
 
 ---
 
-**Version**: 1.0.5  
-**Letzte Aktualisierung**: 2025-10-15
+**Version**: 1.2.0
+**Letzte Aktualisierung**: 2026-03-29
