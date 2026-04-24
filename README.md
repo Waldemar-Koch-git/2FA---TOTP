@@ -213,5 +213,5 @@ Diese Software wird "wie besehen" bereitgestellt, ohne jegliche Garantie. Nutzen
 
 ---
 
-**Version**: 1.2.0
-**Letzte Aktualisierung**: 2026-03-29
+**Version**: 1.3.0
+**Letzte Aktualisierung**: 2026-04-24
