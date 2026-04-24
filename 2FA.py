@@ -26,8 +26,8 @@ install: pip install pyotp cryptography argon2-cffi
 
 Author      : Waldemar Koch
 Created     : 2025-08-09
-Last Update : 2026-03-29
-Version     : 1.2.0
+Last Update : 2026-04-24
+Version     : 1.3.0
 License     : MIT License (Modified: Non-Commercial Use Only)
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -77,7 +77,7 @@ if platform.system() == "Windows":
         pass
 
 
-# QR-Code Scan Support (optional – benötigt Pillow und pyzbar)
+# QR-Code Scan Support (optional – benötigt Pillow und zxing-cpp)
 try:
     from PIL import ImageGrab, Image
     _PIL_AVAILABLE = True
@@ -85,7 +85,14 @@ except ImportError:
     _PIL_AVAILABLE = False
 
 try:
-    from pyzbar.pyzbar import decode as _pyzbar_decode
+    import zxingcpp as _zxingcpp
+    def _pyzbar_decode(pil_img):
+        """Wrapper um zxingcpp, der das pyzbar-Interface nachahmt."""
+        import numpy as np
+        results = _zxingcpp.read_barcodes(np.array(pil_img))
+        class _Obj:
+            def __init__(self, text): self.data = text.encode("utf-8")
+        return [_Obj(r.text) for r in results]
     _PYZBAR_AVAILABLE = True
 except ImportError:
     _PYZBAR_AVAILABLE = False
@@ -154,7 +161,7 @@ def _set_entry(entry: ttk.Entry, value: str) -> None:
 
 def _decode_qr(pil_img) -> list[str]:
     """
-    Dekodiert QR‑Codes aus einem PIL‑Image mittels pyzbar.
+    Dekodiert QR‑Codes aus einem PIL‑Image mittels zxing-cpp.
 
     Args:
         pil_img: Ein PIL‑Image‑Objekt (RGB oder L).
@@ -1178,7 +1185,7 @@ class AccountDialog(tk.Toplevel):
         self.secret_entry = ttk.Entry(self, width=30)
         self.secret_entry.grid(row=3, column=1, padx=5, pady=5)
 
-        # QR‑Code‑Buttons (nur wenn Pillow + pyzbar installiert)
+        # QR‑Code‑Buttons (nur wenn Pillow + zxing-cpp installiert)
         if QR_SCAN_AVAILABLE:
             qr_frame = ttk.Frame(self)
             qr_frame.grid(row=4, column=0, columnspan=2, pady=(0, 2))

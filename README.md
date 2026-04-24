@@ -47,7 +47,7 @@ Im Hinzufügen- und Bearbeiten-Dialog stehen zwei Schaltflächen bereit:
 - **📷 Von QR-Code scannen (Screenshot)** – Markiert per Maus einen Bereich auf dem Bildschirm. Der QR-Code wird sofort ausgelesen und alle Felder automatisch ausgefüllt.
 - **🖼 Von Bilddatei** – Öffnet eine Bilddatei (PNG, JPG, BMP …) und liest den QR-Code daraus.
 
-> **Voraussetzung:** `pip install pillow pyzbar`
+> **Voraussetzung:** `pip install pillow zxing-cpp numpy`
 > Sind diese Pakete nicht installiert, werden die Schaltflächen nicht angezeigt – das Programm läuft weiterhin normal.
 
 #### Weitere Accounts
@@ -99,7 +99,7 @@ In der GUI: Rechtsklick → Bearbeiten.
 
 ### Volle Funktionalität:
 ```bash
-pip install pyotp cryptography argon2-cffi pillow pyzbar
+pip install pyotp cryptography argon2-cffi pillow zxing-cpp numpy
 ```
 
 ### Minimum:
@@ -109,7 +109,7 @@ pip install pyotp cryptography argon2-cffi
 
 ### (Optional) Für QR-Code-Scan:
 ```bash
-pip install pillow pyzbar
+pip install pillow zxing-cpp numpy
 ```
 
 ### Bibliothekenbeschreibungen
@@ -122,14 +122,14 @@ pip install pillow pyzbar
 
 **Optionale Pakete (für QR-Code-Scan):**
 - `pillow` – Bildverarbeitung und Screenshots
-- `pyzbar` – QR-Code- und Barcode-Dekodierung
+- `zxing-cpp` – QR-Code- und Barcode-Dekodierung
 
 ## 🚀 Installation & Start
 
 
 1. Für volle Funktionalität
    ```bash
-   pip install pyotp cryptography argon2-cffi pillow pyzbar
+   pip install pyotp cryptography argon2-cffi pillow zxing-cpp numpy
    ```
    
    Oder Separat: 
@@ -139,7 +139,7 @@ pip install pillow pyzbar
    ```
    Optional für QR-Scan:
    ```bash
-   pip install pillow pyzbar
+   pip install pillow zxing-cpp numpy
    ```
 
 2. Programm starten:
