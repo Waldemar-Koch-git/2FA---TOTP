@@ -65,8 +65,8 @@ Einfügen der Informationen und im Anschluss auf `OK`.
 
 Im Hinzufügen- und Bearbeiten-Dialog stehen zwei Schaltflächen bereit:
 
-- ** Von QR-Code scannen (Screenshot)** – Markiert per Maus einen Bereich auf dem Bildschirm. Der QR-Code wird sofort ausgelesen und die Felder werden automatisch ausgefüllt.
-- ** Von Bilddatei** – Öffnet eine Bilddatei, z. B. PNG, JPG oder BMP, und liest den QR-Code daraus.
+- **Von QR-Code scannen (Screenshot)** – Markiert per Maus einen Bereich auf dem Bildschirm. Der QR-Code wird sofort ausgelesen und die Felder werden automatisch ausgefüllt.
+- **Von Bilddatei** – Öffnet eine Bilddatei, z. B. PNG, JPG oder BMP, und liest den QR-Code daraus.
 
 > **Voraussetzung:**  
 > `pip install pillow zxing-cpp numpy`  
