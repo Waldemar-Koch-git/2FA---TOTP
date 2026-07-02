@@ -1,4 +1,6 @@
-MIT License (Modified: Non-Commercial Use Only)
+Custom Non-Commercial License
+              MIT-style terms, but non-commercial use only.
+              This is not the MIT License and not OSI-approved.
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to use,
@@ -7,6 +9,10 @@ purposes only, subject to the following conditions:
 
 The above copyright notice and this permission notice shall be included in all
 copies or substantial portions of the Software.
+
+Commercial use, selling, sublicensing for commercial purposes, or use as part
+of a commercial product or commercial service is not permitted without prior
+written permission from the author.
 
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
