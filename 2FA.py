@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+from __future__ import annotations
 
+__version__ = "v1.6"
 """
 2FA Authenticator :: TOTP – Desktop‑Anwendung
 
@@ -20,8 +22,8 @@ optional für QR-Code-Scan:
 
 Author      : Waldemar Koch
 Created     : 2025-08-09
-Last Update : 2026-07-02
-Version     : 1.5.0
+Last Update : 2026-07-10
+Version     : 1.6
 License     : Custom Non-Commercial License
               MIT-style terms, but non-commercial use only.
               This is not the MIT License and not OSI-approved.
@@ -42,8 +44,6 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
 FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
 """
-
-from __future__ import annotations
 
 import atexit
 import base64
@@ -124,7 +124,24 @@ QR_SCAN_AVAILABLE = _PIL_AVAILABLE and _PYZBAR_AVAILABLE
 # Konfiguration – alles in Großbuchstaben
 # --------------------------------------------------------------------------- #
 
-DATA_FILE = Path("authenticator_data.json")
+
+def _get_app_base_dir() -> Path:
+    """
+    Liefert das Verzeichnis, in dem sich das Programm selbst befindet.
+
+    BUGFIX (1.5 -> 1.5.1): Ein rein relativer Pfad wird gegen das
+    Working Directory aufgelöst, das je nach Startart (Autostart,
+    Verknüpfung, Doppelklick ...) ein geschützter Ordner sein kann.
+    Deshalb wird immer der tatsächliche Speicherort der Programmdatei
+    verwendet, nie das CWD.
+    """
+    if getattr(sys, "frozen", False):
+        # Als PyInstaller-o.ä.-EXE gepackt: sys.executable ist die .exe.
+        return Path(sys.executable).resolve().parent
+    return Path(__file__).resolve().parent
+
+
+DATA_FILE = _get_app_base_dir() / "authenticator_data.json"
 LOCK_FILE = DATA_FILE.with_suffix(".lock")
 
 SALT_SIZE = 32  # Bytes für den KDF‑Salt
@@ -366,25 +383,54 @@ class SingleInstanceLock:
     """
     Verhindert, dass mehrere Instanzen gleichzeitig dieselbe Datenbank bearbeiten.
 
-    Nutzt betriebssystemspezifische Dateisperren:
-      - Windows: msvcrt.locking
-      - Unix/Linux/macOS: fcntl.flock
-
-    Die Lock-Datei darf nach einem Crash liegen bleiben. Entscheidend ist die
-    echte OS-Sperre, nicht die Existenz der Datei.
+    Nutzt OS-Dateisperren (Windows: msvcrt.locking, Unix: fcntl.flock).
+    Eine nach einem Crash liegen gebliebene Lock-Datei ist unkritisch,
+    da die echte OS-Sperre und nicht die Existenz der Datei entscheidet.
     """
 
     def __init__(self, path: Path) -> None:
         self.path = path
         self.handle = None
         self._locked = False
+        # error_kind unterscheidet "locked" (andere Instanz hält den Lock),
+        # "permission" (keine Schreibrechte) und "other" für die Fehlermeldung.
+        self.error_kind: Optional[str] = None
+        self.error_message: Optional[str] = None
 
     def acquire(self) -> bool:
         """Versucht, den Lock nicht-blockierend zu erwerben."""
+        self.error_kind = None
+        self.error_message = None
+
         try:
             self.path.parent.mkdir(parents=True, exist_ok=True)
-            self.handle = open(self.path, "a+b")
+        except PermissionError as exc:
+            logging.error("Lock-Verzeichnis nicht erstellbar (Rechte): %s", exc)
+            self.error_kind = "permission"
+            self.error_message = str(exc)
+            return False
+        except Exception as exc:
+            logging.error("Lock-Verzeichnis nicht erstellbar: %s", exc)
+            self.error_kind = "other"
+            self.error_message = str(exc)
+            return False
 
+        try:
+            self.handle = open(self.path, "a+b")
+        except PermissionError as exc:
+            # Kein Konkurrenzzugriff, sondern fehlende Schreibrechte auf
+            # die Lock-Datei bzw. deren Verzeichnis.
+            logging.error("Lock-Datei nicht öffenbar (Rechte): %s", exc)
+            self.error_kind = "permission"
+            self.error_message = str(exc)
+            return False
+        except OSError as exc:
+            logging.error("Lock-Datei nicht öffenbar: %s", exc)
+            self.error_kind = "other"
+            self.error_message = str(exc)
+            return False
+
+        try:
             if os.name == "nt":
                 import msvcrt
 
@@ -396,18 +442,24 @@ class SingleInstanceLock:
 
                 try:
                     msvcrt.locking(self.handle.fileno(), msvcrt.LK_NBLCK, 1)
-                except OSError:
+                except OSError as exc:
                     self.handle.close()
                     self.handle = None
+                    # Dieser Fehler bedeutet: eine andere Instanz hält den
+                    # Lock bereits – das ist der einzig echte "belegt"-Fall.
+                    self.error_kind = "locked"
+                    self.error_message = str(exc)
                     return False
             else:
                 import fcntl
 
                 try:
                     fcntl.flock(self.handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-                except OSError:
+                except OSError as exc:
                     self.handle.close()
                     self.handle = None
+                    self.error_kind = "locked"
+                    self.error_message = str(exc)
                     return False
 
             self._locked = True
@@ -433,6 +485,8 @@ class SingleInstanceLock:
 
             self.handle = None
             self._locked = False
+            self.error_kind = "other"
+            self.error_message = str(exc)
             return False
 
     def release(self) -> None:
@@ -617,12 +671,41 @@ class AuthenticatorApp:
         self.instance_lock = SingleInstanceLock(LOCK_FILE)
 
         if not self.instance_lock.acquire():
-            messagebox.showerror(
-                "Bereits geöffnet",
-                "Die Anwendung scheint bereits geöffnet zu sein.\n\n"
-                "Damit keine Daten überschrieben werden, wird diese Instanz beendet.",
-                parent=self.root,
-            )
+            if self.instance_lock.error_kind == "locked":
+                # Echter Fall: eine andere Instanz hält den OS-Lock.
+                messagebox.showerror(
+                    "Bereits geöffnet",
+                    "Die Anwendung scheint bereits geöffnet zu sein.\n\n"
+                    "Damit keine Daten überschrieben werden, wird diese Instanz beendet.",
+                    parent=self.root,
+                )
+            elif self.instance_lock.error_kind == "permission":
+                # Programmordner ist schreibgeschützt (z.B. "Program Files").
+                retry_as_admin = messagebox.askretrycancel(
+                    "Zugriff verweigert",
+                    "Die Anwendung konnte nicht auf ihren eigenen Programmordner "
+                    "schreiben (keine Schreibrechte):\n\n"
+                    f"{LOCK_FILE.parent}\n\n"
+                    f"Technischer Grund: {self.instance_lock.error_message}\n\n"
+                    "Das passiert typischerweise, wenn das Programm in einem "
+                    "geschützten Ordner liegt (z.B. 'Programme'/'Program Files').\n"
+                    "Empfehlung: Programmordner an einen Ort verschieben, an dem "
+                    "du normal schreiben darfst (z.B. Desktop, Dokumente, eigener "
+                    "Ordner) – dann ist auch künftig kein Admin-Start nötig.\n\n"
+                    "Klicke auf 'Wiederholen', um die App stattdessen jetzt "
+                    "einmalig mit erhöhten Rechten neu zu starten, oder auf "
+                    "'Abbrechen' zum Beenden.",
+                    parent=self.root,
+                )
+                if retry_as_admin:
+                    self._relaunch_as_admin()
+            else:
+                messagebox.showerror(
+                    "Startfehler",
+                    "Die Anwendung konnte nicht gestartet werden:\n\n"
+                    f"{self.instance_lock.error_message}",
+                    parent=self.root,
+                )
             self.root.destroy()
             sys.exit()
 
@@ -668,6 +751,50 @@ class AuthenticatorApp:
             logging.info("Programm wird beendet.")
         finally:
             self.instance_lock.release()
+
+    # ------------------------------------------------------------------ #
+    # Neustart mit erhöhten Rechten (Fallback bei Rechteproblemen)
+    # ------------------------------------------------------------------ #
+
+    def _relaunch_as_admin(self) -> None:
+        """
+        Startet die Anwendung mit erhöhten Rechten neu.
+
+        Nur als Fallback für Sonderfälle gedacht (z.B. Virenscanner oder
+        Gruppenrichtlinie blockiert den Zugriff), kein empfohlener Normalfall.
+        """
+        try:
+            if platform.system() == "Windows":
+                import ctypes
+
+                params = " ".join(f'"{a}"' for a in sys.argv)
+                ctypes.windll.shell32.ShellExecuteW(
+                    None, "runas", sys.executable, params, None, 1
+                )
+            else:
+                # Unix/macOS: kein "runas"-Äquivalent für GUI-Apps.
+                # pkexec/sudo starten, falls vorhanden.
+                import shutil
+                import subprocess
+
+                elevator = shutil.which("pkexec") or shutil.which("sudo")
+                if elevator:
+                    subprocess.Popen([elevator, sys.executable, *sys.argv])
+                else:
+                    messagebox.showerror(
+                        "Nicht möglich",
+                        "Kein Werkzeug zum Erhöhen der Rechte gefunden "
+                        "(pkexec/sudo). Bitte Verzeichnisrechte manuell prüfen.",
+                        parent=self.root,
+                    )
+                    return
+        except Exception as exc:
+            logging.error("Neustart mit erhöhten Rechten fehlgeschlagen: %s", exc)
+            messagebox.showerror(
+                "Fehlgeschlagen",
+                f"Neustart mit erhöhten Rechten fehlgeschlagen:\n{exc}",
+                parent=self.root,
+            )
 
     # ------------------------------------------------------------------ #
     # DPI / Skalierung
@@ -794,7 +921,7 @@ class AuthenticatorApp:
         """Zeigt den Login‑Dialog und lädt die Accounts."""
         while True:
             pwd = simpledialog.askstring(
-                "2FA:TOTP",
+                f"2FA:TOTP - {__version__}",
                 "Bitte gib dein Master-Passwort ein:",
                 parent=self.root,
                 show="*",
@@ -852,7 +979,7 @@ class AuthenticatorApp:
     def _build_main_window(self) -> None:
         """Stellt das Hauptfenster zusammen."""
         self.root.deiconify()
-        self.root.title("2FA Authenticator :: TOTP")
+        self.root.title(f"2FA Authenticator :: TOTP :: {__version__}")
 
         self.root.geometry("900x620")
         self.root.minsize(760, 500)
@@ -2084,46 +2211,7 @@ class EditAccountDialog(AccountDialog):
             self.show_var.set(True)
             self.secret_entry.configure(show="")
 
-    def _ok(self) -> None:
-        """Validiert die Eingaben."""
-        name = self.name_entry.get().strip()
-        info = self.info_entry.get().strip()
-        firma = self.firma_entry.get().strip()
-        secret = _normalize_secret(self.secret_entry.get())
-        hash_algo = self.hash_var.get()
-
-        try:
-            digits = int(self.digits_spin.get())
-        except Exception:
-            messagebox.showerror("Fehler", "Ungültige Ziffernanzahl.", parent=self)
-            return
-
-        try:
-            period = int(self.period_spin.get())
-        except Exception:
-            messagebox.showerror("Fehler", "Ungültige Periode.", parent=self)
-            return
-
-        if not name:
-            messagebox.showerror("Fehler", "Der Kontoname darf nicht leer sein.", parent=self)
-            return
-
-        if not secret:
-            messagebox.showerror("Fehler", "Der TOTP-Schlüssel darf nicht leer sein.", parent=self)
-            return
-
-        if hash_algo not in HASH_OPTIONS:
-            messagebox.showerror("Fehler", "Ungültiger Hash-Algorithmus.", parent=self)
-            return
-
-        try:
-            _validate_totp(secret, digits, hash_algo, period)
-        except Exception as exc:
-            messagebox.showerror("Ungültiges Secret", str(exc), parent=self)
-            return
-
-        self.result = (name, info, firma, secret, hash_algo, digits, period)
-        self.destroy()
+    # _ok() wird unverändert von AccountDialog geerbt – identische Validierung.
 
 
 # --------------------------------------------------------------------------- #
