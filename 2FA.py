@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 
-__version__ = "v1.6"
+__version__ = "v1.7"
 """
 2FA Authenticator :: TOTP – Desktop‑Anwendung
 
@@ -22,8 +22,8 @@ optional für QR-Code-Scan:
 
 Author      : Waldemar Koch
 Created     : 2025-08-09
-Last Update : 2026-07-10
-Version     : 1.6
+Last Update : 2026-08-14
+Version     : 1.7
 License     : Custom Non-Commercial License
               MIT-style terms, but non-commercial use only.
               This is not the MIT License and not OSI-approved.
@@ -160,6 +160,37 @@ DEFAULT_PERIOD = COUNTDOWN_START
 HASH_OPTIONS = ("sha1", "sha256", "sha512")
 DEFAULT_DIGITS = 6
 DEFAULT_HASH = "sha1"
+
+
+# --------------------------------------------------------------------------- #
+# Farbpalette / Theme
+# --------------------------------------------------------------------------- #
+# Zentrale Farbdefinitionen für ein modernes, ruhiges Erscheinungsbild.
+# Wird ausschließlich in _apply_theme() (AuthenticatorApp) verwendet, alle
+# ttk-basierten Dialoge (AccountDialog, EditAccountDialog, ...) erben diese
+# Styles automatisch, da sie nur ttk-Widgets ohne eigene Farbwahl nutzen.
+
+UI_FONT_FAMILY = "Segoe UI" if platform.system() == "Windows" else "Helvetica"
+
+COLOR_BG = "#f4f5f9"          # Fensterhintergrund
+COLOR_SURFACE = "#ffffff"     # Karten / Eingabefelder
+COLOR_BORDER = "#e1e3ea"      # dezente Trennlinien
+COLOR_TEXT = "#1f2430"        # Haupttext
+COLOR_MUTED = "#6b7280"       # sekundärer Text
+COLOR_ACCENT = "#4f46e5"      # Primärfarbe (Indigo)
+COLOR_ACCENT_HOVER = "#4338ca"
+COLOR_ACCENT_PRESSED = "#3730a3"
+COLOR_ACCENT_SOFT = "#e6e4fb"  # Auswahl-/Hover-Hintergrund
+COLOR_DANGER = "#dc2626"
+COLOR_DANGER_HOVER = "#b91c1c"
+COLOR_SECONDARY_BG = "#eceef4"
+COLOR_SECONDARY_HOVER = "#dfe2ec"
+
+COLOR_ROW_NORMAL = "#ffffff"
+COLOR_ROW_WARNING_BG = "#fff2cf"
+COLOR_ROW_WARNING_FG = "#7a5b00"
+COLOR_ROW_CRITICAL_BG = "#fde3e3"
+COLOR_ROW_CRITICAL_FG = "#8a1f1f"
 
 
 # --------------------------------------------------------------------------- #
@@ -718,7 +749,7 @@ class AuthenticatorApp:
         except Exception:
             pass
 
-        self._font_size: int = 10
+        self._font_size: int = 12
         self.remaining: int = COUNTDOWN_START
         self.data_store = DataStore(DATA_FILE)
 
@@ -731,6 +762,7 @@ class AuthenticatorApp:
         else:
             self._setup_new_master()
 
+        self._apply_theme()
         self._apply_global_font(self._font_size)
         self.remaining = COUNTDOWN_START
         self._build_main_window()
@@ -868,6 +900,170 @@ class AuthenticatorApp:
     # Schrift / Style
     # ------------------------------------------------------------------ #
 
+    def _apply_theme(self) -> None:
+        """
+        Richtet ein modernes, ruhiges Erscheinungsbild für die gesamte
+        Anwendung ein (Fenster, Buttons, Eingabefelder, Treeview, ...).
+
+        Da alle Dialoge (AccountDialog, EditAccountDialog, ...) ausschließlich
+        ttk‑Widgets ohne eigene Farbwahl verwenden, übernehmen sie diese
+        Styles automatisch – es sind keine Änderungen an den Dialogen nötig.
+        """
+        self.root.configure(bg=COLOR_BG)
+
+        style = ttk.Style(self.root)
+
+        # "clam" ist das einzige eingebaute Theme, das Hintergrund-/
+        # Rahmenfarben von Buttons & Co. auf allen Plattformen respektiert.
+        try:
+            style.theme_use("clam")
+        except Exception:
+            pass
+
+        style.configure(".", background=COLOR_BG, foreground=COLOR_TEXT)
+
+        style.configure("TFrame", background=COLOR_BG)
+        style.configure("TLabel", background=COLOR_BG, foreground=COLOR_TEXT)
+
+        style.configure(
+            "Header.TLabel",
+            background=COLOR_BG,
+            foreground=COLOR_TEXT,
+        )
+        style.configure(
+            "Subtitle.TLabel",
+            background=COLOR_BG,
+            foreground=COLOR_MUTED,
+        )
+        style.configure(
+            "Status.TLabel",
+            background=COLOR_BG,
+            foreground=COLOR_MUTED,
+        )
+
+        # --- Eingabefelder ---------------------------------------------- #
+        style.configure(
+            "TEntry",
+            fieldbackground=COLOR_SURFACE,
+            foreground=COLOR_TEXT,
+            bordercolor=COLOR_BORDER,
+            lightcolor=COLOR_BORDER,
+            darkcolor=COLOR_BORDER,
+            borderwidth=1,
+            relief="solid",
+            padding=6,
+        )
+        style.map(
+            "TEntry",
+            bordercolor=[("focus", COLOR_ACCENT)],
+            lightcolor=[("focus", COLOR_ACCENT)],
+            darkcolor=[("focus", COLOR_ACCENT)],
+        )
+
+        style.configure(
+            "TCombobox",
+            fieldbackground=COLOR_SURFACE,
+            background=COLOR_SURFACE,
+            foreground=COLOR_TEXT,
+            arrowcolor=COLOR_MUTED,
+            bordercolor=COLOR_BORDER,
+            padding=5,
+        )
+        style.configure(
+            "TSpinbox",
+            fieldbackground=COLOR_SURFACE,
+            foreground=COLOR_TEXT,
+            bordercolor=COLOR_BORDER,
+            arrowcolor=COLOR_MUTED,
+            padding=5,
+        )
+
+        # --- Buttons ------------------------------------------------------ #
+        # Primär (Standard) = Akzentfarbe, z. B. "Account hinzufügen", "OK".
+        style.configure(
+            "TButton",
+            background=COLOR_ACCENT,
+            foreground="#ffffff",
+            borderwidth=0,
+            focusthickness=0,
+            padding=(14, 8),
+            font=(UI_FONT_FAMILY, self._font_size, "bold"),
+        )
+        style.map(
+            "TButton",
+            background=[
+                ("disabled", "#c9cadb"),
+                ("pressed", COLOR_ACCENT_PRESSED),
+                ("active", COLOR_ACCENT_HOVER),
+            ],
+        )
+
+        # Sekundär = neutrale Aktionen, z. B. "Abbrechen", QR-Buttons.
+        style.configure(
+            "Secondary.TButton",
+            background=COLOR_SECONDARY_BG,
+            foreground=COLOR_TEXT,
+            borderwidth=0,
+            focusthickness=0,
+            padding=(14, 8),
+            font=(UI_FONT_FAMILY, self._font_size),
+        )
+        style.map(
+            "Secondary.TButton",
+            background=[
+                ("disabled", "#eceef4"),
+                ("pressed", COLOR_SECONDARY_HOVER),
+                ("active", COLOR_SECONDARY_HOVER),
+            ],
+        )
+
+        # Gefahr = zerstörerische Aktionen, z. B. "Account löschen".
+        style.configure(
+            "Danger.TButton",
+            background=COLOR_DANGER,
+            foreground="#ffffff",
+            borderwidth=0,
+            focusthickness=0,
+            padding=(14, 8),
+            font=(UI_FONT_FAMILY, self._font_size, "bold"),
+        )
+        style.map(
+            "Danger.TButton",
+            background=[
+                ("disabled", "#e8a9a9"),
+                ("pressed", COLOR_DANGER_HOVER),
+                ("active", COLOR_DANGER_HOVER),
+            ],
+        )
+
+        # --- Treeview (Account-Liste) ------------------------------------ #
+        style.configure(
+            "Treeview",
+            background=COLOR_SURFACE,
+            fieldbackground=COLOR_SURFACE,
+            foreground=COLOR_TEXT,
+            borderwidth=0,
+            relief="flat",
+        )
+        style.configure(
+            "Treeview.Heading",
+            background=COLOR_SECONDARY_BG,
+            foreground=COLOR_TEXT,
+            relief="flat",
+            padding=(8, 8),
+        )
+        style.map(
+            "Treeview.Heading",
+            background=[("active", COLOR_SECONDARY_HOVER)],
+        )
+        style.map(
+            "Treeview",
+            background=[("selected", COLOR_ACCENT_SOFT)],
+            foreground=[("selected", COLOR_ACCENT_PRESSED)],
+        )
+
+        style.configure("Vertical.TScrollbar", background=COLOR_SECONDARY_BG, troughcolor=COLOR_BG, bordercolor=COLOR_BG, arrowcolor=COLOR_MUTED)
+
     def _apply_global_font(self, size: int) -> None:
         """
         Setzt die globale Schriftgröße für alle Tkinter‑ und ttk‑Widgets.
@@ -881,29 +1077,64 @@ class AuthenticatorApp:
                 pass
 
         style = ttk.Style()
-        style.configure(".", font=("Arial", self._font_size))
+        style.configure(".", font=(UI_FONT_FAMILY, self._font_size))
+
+        style.configure("TButton", font=(UI_FONT_FAMILY, self._font_size, "bold"))
+        style.configure("Secondary.TButton", font=(UI_FONT_FAMILY, self._font_size))
+        style.configure("Danger.TButton", font=(UI_FONT_FAMILY, self._font_size, "bold"))
+
+        style.configure(
+            "Header.TLabel",
+            font=(UI_FONT_FAMILY, self._font_size + 10, "bold"),
+        )
+        style.configure(
+            "Subtitle.TLabel",
+            font=(UI_FONT_FAMILY, self._font_size),
+        )
+        style.configure(
+            "Status.TLabel",
+            font=(UI_FONT_FAMILY, max(8, self._font_size - 1)),
+        )
 
         rowheight = max(
-            24,
-            int(round(self._font_size * 2.7 * max(1.0, self.dpi_scale))),
+            30,
+            int(round(self._font_size * 2.9 * max(1.0, self.dpi_scale))),
         )
 
         style.configure(
             "Treeview",
-            font=("Arial", self._font_size),
+            font=(UI_FONT_FAMILY, self._font_size),
             rowheight=rowheight,
         )
 
         style.configure(
             "Treeview.Heading",
-            font=("Arial", self._font_size, "bold"),
+            font=(UI_FONT_FAMILY, self._font_size, "bold"),
         )
 
-        if hasattr(self, "info_label"):
-            self.info_label.configure(font=("Arial", self._font_size + 2))
-
         if hasattr(self, "tree"):
+            self.tree.tag_configure("normal", background=COLOR_ROW_NORMAL, foreground=COLOR_TEXT)
+            self.tree.tag_configure(
+                "warning",
+                background=COLOR_ROW_WARNING_BG,
+                foreground=COLOR_ROW_WARNING_FG,
+            )
+            self.tree.tag_configure(
+                "critical",
+                background=COLOR_ROW_CRITICAL_BG,
+                foreground=COLOR_ROW_CRITICAL_FG,
+            )
             self._resize_tree_columns()
+
+        # Menüleiste (Einstellungen/Anzeige/Daten) nutzt ein eigenes Font-
+        # Objekt, weil "TkMenuFont" von manchen Windows-/Linux-Themes für
+        # Dropdown-Einträge ignoriert wird. Über dieses Font-Objekt lässt
+        # sich die Größe der Untermenüs zuverlässig mitskalieren.
+        menu_font_size = self._font_size + 1
+        if hasattr(self, "_menu_font"):
+            self._menu_font.configure(size=menu_font_size)
+        else:
+            self._menu_font = tkfont.Font(family=UI_FONT_FAMILY, size=menu_font_size)
 
     def _increase_font(self) -> None:
         """Vergrößert die Schriftgröße um einen Punkt."""
@@ -989,17 +1220,18 @@ class AuthenticatorApp:
         self.root.rowconfigure(1, weight=0)
         self.root.rowconfigure(2, weight=1)
         self.root.rowconfigure(3, weight=0)
+        self.root.rowconfigure(4, weight=0)
 
-        menubar = tk.Menu(self.root)
+        menubar = tk.Menu(self.root, font=self._menu_font)
 
-        settings_menu = tk.Menu(menubar, tearoff=0)
+        settings_menu = tk.Menu(menubar, tearoff=0, font=self._menu_font)
         settings_menu.add_command(
             label="Master-Passwort ändern",
             command=self._change_master_password,
         )
         menubar.add_cascade(label="Einstellungen", menu=settings_menu)
 
-        display_menu = tk.Menu(menubar, tearoff=0)
+        display_menu = tk.Menu(menubar, tearoff=0, font=self._menu_font)
         display_menu.add_command(
             label="Schriftgröße vergrößern",
             command=self._increase_font,
@@ -1010,37 +1242,35 @@ class AuthenticatorApp:
         )
         menubar.add_cascade(label="Anzeige", menu=display_menu)
 
-        data_menu = tk.Menu(menubar, tearoff=0)
+        data_menu = tk.Menu(menubar, tearoff=0, font=self._menu_font)
         data_menu.add_command(label="Exportieren…", command=self._export_data)
         data_menu.add_command(label="Importieren…", command=self._import_data)
         menubar.add_cascade(label="Daten", menu=data_menu)
 
         self.root.config(menu=menubar)
 
-        # Hinweis-Label
-        self.info_label = ttk.Label(
-            self.root,
-            text="Zum Kopieren des Codes auf jeweiligen TOTP klicken",
-            font=("Arial", self._font_size + 2),
-            anchor="center",
-        )
-        self.info_label.grid(
-            row=0,
-            column=0,
-            sticky="ew",
-            padx=10,
-            pady=(8, 5),
-        )
+        # --- Kopfzeile: Hinweistext -------------------------------------- #
+        header_frame = ttk.Frame(self.root, padding=(20, 12, 20, 4))
+        header_frame.grid(row=0, column=0, sticky="ew")
+        header_frame.columnconfigure(0, weight=1)
 
-        search_frame = ttk.Frame(self.root, padding=(10, 0))
-        search_frame.grid(row=1, column=0, sticky="ew", padx=0, pady=(0, 5))
+        ttk.Label(
+            header_frame,
+            text="Zum Kopieren des Codes auf den jeweiligen TOTP klicken",
+            style="Subtitle.TLabel",
+            anchor="w",
+        ).grid(row=0, column=0, sticky="w")
+
+        # --- Suche --------------------------------------------------------- #
+        search_frame = ttk.Frame(self.root, padding=(20, 8, 20, 8))
+        search_frame.grid(row=1, column=0, sticky="ew")
         search_frame.columnconfigure(1, weight=1)
 
-        ttk.Label(search_frame, text="Suche:").grid(
+        ttk.Label(search_frame, text="🔍", style="Subtitle.TLabel").grid(
             row=0,
             column=0,
             sticky="w",
-            padx=(0, 5),
+            padx=(0, 8),
         )
 
         self.search_var = tk.StringVar()
@@ -1052,8 +1282,12 @@ class AuthenticatorApp:
         )
         self.search_var.trace_add("write", lambda *_: self._refresh_tree())
 
-        frame = ttk.Frame(self.root, padding=(10, 5, 10, 5))
-        frame.grid(row=2, column=0, sticky="nsew")
+        # --- Account-Liste (Karte mit dezentem Rahmen) --------------------- #
+        outer = tk.Frame(self.root, bg=COLOR_BORDER)
+        outer.grid(row=2, column=0, sticky="nsew", padx=20, pady=(4, 8))
+
+        frame = ttk.Frame(outer, padding=1)
+        frame.pack(fill="both", expand=True)
         frame.columnconfigure(0, weight=1)
         frame.rowconfigure(0, weight=1)
 
@@ -1080,13 +1314,18 @@ class AuthenticatorApp:
                 anchor=tk.CENTER if col in ("countdown", "code") else tk.W,
             )
 
-        # Farbliche Markierung nach Restlaufzeit.
-        # Hinweis: Je nach Betriebssystem/Theme ignorieren manche ttk-Themes
-        # einzelne Farben teilweise. Falls das passiert, kann man später ein
-        # anderes Theme setzen, z. B. "clam".
-        self.tree.tag_configure("normal", background="")
-        self.tree.tag_configure("warning", background="#fff3cd")   # helles Gelb/Orange
-        self.tree.tag_configure("critical", background="#f8d7da")  # helles Rot
+        # Farbliche Markierung nach Restlaufzeit (Farben siehe COLOR_ROW_*).
+        self.tree.tag_configure("normal", background=COLOR_ROW_NORMAL, foreground=COLOR_TEXT)
+        self.tree.tag_configure(
+            "warning",
+            background=COLOR_ROW_WARNING_BG,
+            foreground=COLOR_ROW_WARNING_FG,
+        )
+        self.tree.tag_configure(
+            "critical",
+            background=COLOR_ROW_CRITICAL_BG,
+            foreground=COLOR_ROW_CRITICAL_FG,
+        )
 
         self.tree.grid(row=0, column=0, sticky="nsew")
         self.tree.bind("<Configure>", self._resize_tree_columns)
@@ -1095,21 +1334,33 @@ class AuthenticatorApp:
         vsb.grid(row=0, column=1, sticky="ns")
         self.tree.configure(yscrollcommand=vsb.set)
 
-        btn_frame = ttk.Frame(self.root, padding=(10, 5, 10, 10))
+        btn_frame = ttk.Frame(self.root, padding=(20, 4, 20, 10))
         btn_frame.grid(row=3, column=0, sticky="ew")
         btn_frame.columnconfigure(99, weight=1)
 
         ttk.Button(
             btn_frame,
-            text="Account hinzufügen",
+            text="＋  Account hinzufügen",
             command=self._add_account_dialog,
-        ).grid(row=0, column=0, padx=(0, 5), sticky="w")
+        ).grid(row=0, column=0, padx=(0, 8), sticky="w")
 
         ttk.Button(
             btn_frame,
-            text="Account löschen",
+            text="🗑  Account löschen",
+            style="Danger.TButton",
             command=self._delete_selected_account,
         ).grid(row=0, column=1, padx=5, sticky="w")
+
+        # --- Statuszeile ---------------------------------------------------- #
+        status_frame = ttk.Frame(self.root, padding=(20, 0, 20, 10))
+        status_frame.grid(row=4, column=0, sticky="ew")
+
+        self.status_var = tk.StringVar(value="")
+        ttk.Label(
+            status_frame,
+            textvariable=self.status_var,
+            style="Status.TLabel",
+        ).grid(row=0, column=0, sticky="w")
 
         self.tree.bind("<Button-1>", self._on_tree_click)
         self.tree.bind("<Button-3>", self._show_context_menu)
@@ -1181,6 +1432,8 @@ class AuthenticatorApp:
         for item in self.tree.get_children():
             self.tree.delete(item)
 
+        shown = 0
+
         for idx, acct in enumerate(self.accounts):
             if pattern and not (
                 pattern in acct.name.lower()
@@ -1205,6 +1458,14 @@ class AuthenticatorApp:
                 ),
                 tags=(tag,),
             )
+            shown += 1
+
+        if hasattr(self, "status_var"):
+            total = len(self.accounts)
+            if pattern:
+                self.status_var.set(f"{shown} von {total} Accounts (gefiltert)")
+            else:
+                self.status_var.set(f"{total} Account{'s' if total != 1 else ''} gespeichert")
 
     # ------------------------------------------------------------------ #
     # OTP‑Countdown
@@ -1506,7 +1767,7 @@ class AuthenticatorApp:
             "Master-Passwort ändern",
             "Aktuelles Master-Passwort eingeben:",
             parent=self.root,
-            show="*",
+            show=" ",
         )
 
         if pwd_current is None:
@@ -1909,6 +2170,7 @@ class AccountDialog(tk.Toplevel):
         self.transient(parent)
         self.grab_set()
         self.resizable(False, False)
+        self.configure(bg=COLOR_BG)
 
         self.result: Optional[Tuple[str, str, str, str, str, int, int]] = None
 
@@ -1939,12 +2201,14 @@ class AccountDialog(tk.Toplevel):
             ttk.Button(
                 qr_frame,
                 text="📷  Von QR-Code scannen (Screenshot)",
+                style="Secondary.TButton",
                 command=self._scan_qr_screenshot,
             ).pack(side=tk.LEFT, padx=5)
 
             ttk.Button(
                 qr_frame,
                 text="🖼  Von Bilddatei",
+                style="Secondary.TButton",
                 command=self._scan_qr_file,
             ).pack(side=tk.LEFT, padx=5)
 
@@ -1988,7 +2252,12 @@ class AccountDialog(tk.Toplevel):
         btn_frame.grid(row=next_row, column=0, columnspan=2, pady=12)
 
         ttk.Button(btn_frame, text="OK", command=self._ok).pack(side=tk.LEFT, padx=5)
-        ttk.Button(btn_frame, text="Abbrechen", command=self.destroy).pack(side=tk.LEFT, padx=5)
+        ttk.Button(
+            btn_frame,
+            text="Abbrechen",
+            style="Secondary.TButton",
+            command=self.destroy,
+        ).pack(side=tk.LEFT, padx=5)
 
         self.bind("<Return>", lambda event: self._ok())
         self.bind("<Escape>", lambda event: self.destroy())
