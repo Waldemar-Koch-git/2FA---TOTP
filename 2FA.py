@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 
-__version__ = "v1.7"
+__version__ = "v1.8"
 """
 2FA Authenticator :: TOTP – Desktop‑Anwendung
 
@@ -22,8 +22,8 @@ optional für QR-Code-Scan:
 
 Author      : Waldemar Koch
 Created     : 2025-08-09
-Last Update : 2026-08-14
-Version     : 1.7
+Last Update : 2026-09-25
+Version     : 1.8
 License     : Custom Non-Commercial License
               MIT-style terms, but non-commercial use only.
               This is not the MIT License and not OSI-approved.
@@ -48,14 +48,17 @@ FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
 import atexit
 import base64
 import hashlib
+import hmac
+import functools
 import json
 import logging
 import os
 import platform
 import sys
+import tempfile
 import time
 import uuid
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import List, Optional, Tuple
 
@@ -145,6 +148,7 @@ DATA_FILE = _get_app_base_dir() / "authenticator_data.json"
 LOCK_FILE = DATA_FILE.with_suffix(".lock")
 
 SALT_SIZE = 32  # Bytes für den KDF‑Salt
+MAX_IMPORT_BYTES = 16 * 1024 * 1024
 
 # ACHTUNG: Diese 3 Variablen steuern die Verschlüsselungsstärke!
 # ARGON_TIME_COST, ARGON_MEMORY_COST, ARGON_PARALLELISM
@@ -206,6 +210,53 @@ logging.basicConfig(
 # --------------------------------------------------------------------------- #
 # Hilfsfunktionen Modul-Ebene
 # --------------------------------------------------------------------------- #
+
+def _wipe(buffer: Optional[bytearray]) -> None:
+    """Überschreibt unseren Puffer, nicht interne Python-/Bibliothekskopien."""
+    if buffer is not None:
+        buffer[:] = b"\x00" * len(buffer)
+
+
+def _read_json(path: Path):
+    """Begrenzt auch bei fremden Importdateien die Speicherbelegung."""
+    with path.open("rb") as handle:
+        payload = handle.read(MAX_IMPORT_BYTES + 1)
+    if len(payload) > MAX_IMPORT_BYTES:
+        raise ValueError("Datei ist zu groß (maximal 16 MiB).")
+    return json.loads(payload)
+
+
+def _write_json(path: Path, data) -> None:
+    """Atomarer Austausch; zufällige temporäre Datei, unter POSIX nur 0600."""
+    tmp_path = None
+    try:
+        with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8",
+                                         dir=path.parent, prefix=".2fa-", delete=False) as handle:
+            tmp_path = Path(handle.name)
+            json.dump(data, handle)
+            if handle.tell() > MAX_IMPORT_BYTES:
+                raise ValueError("Datei ist zu groß (maximal 16 MiB).")
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(tmp_path, path)
+    finally:
+        if tmp_path is not None:
+            tmp_path.unlink(missing_ok=True)
+
+
+def _session_action(method):
+    """Kennzeichnet verschachtelte GUI-Aktionen mit sensiblen lokalen Daten."""
+    @functools.wraps(method)
+    def wrapped(self, *args, **kwargs):
+        if self.session_key is None:
+            return
+        self._active_actions += 1
+        try:
+            return method(self, *args, **kwargs)
+        finally:
+            self._active_actions -= 1
+    return wrapped
+
 
 def _normalize_secret(secret: str) -> str:
     """
@@ -357,7 +408,13 @@ def _ask_confirmed_password(
             sys.exit()
 
         if pwd1 != pwd2:
+            pwd1 = pwd2 = None
             messagebox.showerror("Fehler", "Passwörter stimmen nicht überein.", parent=parent)
+            continue
+
+        if not pwd1:
+            pwd1 = pwd2 = None
+            messagebox.showerror("Fehler", "Das Passwort darf nicht leer sein.", parent=parent)
             continue
 
         return pwd1
@@ -551,10 +608,8 @@ class SingleInstanceLock:
             self.handle = None
             self._locked = False
 
-            try:
-                self.path.unlink(missing_ok=True)
-            except Exception:
-                pass
+            # Lock-Datei behalten: Unlink nach Unlock ermöglicht auf Unix
+            # konkurrierende Sperren auf unterschiedlichen Inodes.
 
 
 # --------------------------------------------------------------------------- #
@@ -569,7 +624,7 @@ class Account:
     name: str
     info: str
     firma: str
-    secret: str
+    secret: str = field(repr=False)
     hash_algo: str = DEFAULT_HASH
     digits: int = DEFAULT_DIGITS
     period: int = DEFAULT_PERIOD
@@ -600,22 +655,27 @@ class CryptoHelper:
     """Hilfsklasse für Kryptografie‑Operationen."""
 
     @staticmethod
-    def derive_key(password: str, salt: bytes) -> bytes:
+    def derive_key(password: str, salt: bytes) -> bytearray:
         """
         Leitet einen 256‑Bit‑Schlüssel aus Passwort und Salt ab.
         """
-        return hash_secret_raw(
-            secret=password.encode(),
-            salt=salt,
-            time_cost=ARGON_TIME_COST,
-            memory_cost=ARGON_MEMORY_COST,
-            parallelism=ARGON_PARALLELISM,
-            hash_len=32,
-            type=Type.ID,
-        )
+        try:
+            return bytearray(hash_secret_raw(
+                secret=password.encode(),
+                salt=salt,
+                time_cost=ARGON_TIME_COST,
+                memory_cost=ARGON_MEMORY_COST,
+                parallelism=ARGON_PARALLELISM,
+                hash_len=32,
+                type=Type.ID,
+            ))
+        finally:
+            # str/bytes sind unveränderlich: Referenz lösen, kein Zeroization-
+            # Versprechen für Python, Tk, Argon2 oder den Kryptografie-Backend.
+            password = None
 
     @staticmethod
-    def encrypt(plaintext: bytes, key: bytes) -> str:
+    def encrypt(plaintext: bytes, key: bytes | bytearray) -> str:
         """
         Verschlüsselt Klartext mit AES‑GCM.
         """
@@ -624,12 +684,14 @@ class CryptoHelper:
         return base64.urlsafe_b64encode(nonce + ct).decode()
 
     @staticmethod
-    def decrypt(ciphertext_b64: str, key: bytes) -> bytes:
+    def decrypt(ciphertext_b64: str, key: bytes | bytearray) -> bytes:
         """
         Entschlüsselt AES‑GCM-Ciphertext.
         """
         try:
-            raw = base64.urlsafe_b64decode(ciphertext_b64)
+            raw = base64.b64decode(ciphertext_b64, altchars=b"-_", validate=True)
+            if len(raw) < 28:
+                raise ValueError("Ciphertext zu kurz.")
             nonce, ct = raw[:12], raw[12:]
             return AESGCM(key).decrypt(nonce, ct, None)
         except Exception as exc:
@@ -646,42 +708,52 @@ class DataStore:
     def __init__(self, file_path: Path) -> None:
         self.file = file_path
 
-    def load(self, password: str) -> Tuple[List[Account], bytes]:
+    def load(self, password: str) -> Tuple[List[Account], bytes, bytearray]:
         """
         Lädt die Accounts aus der verschlüsselten Datei.
         """
         if not self.file.exists():
             raise FileNotFoundError("Datenbank existiert nicht.")
 
-        with self.file.open(encoding="utf-8") as f:
-            data = json.load(f)
+        data = _read_json(self.file)
 
-        salt = base64.urlsafe_b64decode(data["salt"])
-        key = CryptoHelper.derive_key(password, salt)
-        plaintext = CryptoHelper.decrypt(data["data"], key)
-        raw_accounts = json.loads(plaintext.decode())
+        salt = base64.b64decode(data["salt"], altchars=b"-_", validate=True)
+        if len(salt) != SALT_SIZE:
+            raise ValueError("Ungültiger Salt.")
+        try:
+            key = CryptoHelper.derive_key(password, salt)
+        finally:
+            password = None
+        plaintext = None
+        try:
+            plaintext = bytearray(CryptoHelper.decrypt(data["data"], key))
+            raw_accounts = json.loads(plaintext)
+            accounts = [_validate_and_normalize_account(Account.from_dict(a)) for a in raw_accounts]
+            return accounts, salt, key
+        except BaseException:
+            _wipe(key)
+            raise
+        finally:
+            _wipe(plaintext)
 
-        return [Account.from_dict(a) for a in raw_accounts], salt
-
-    def save(self, password: str, accounts: List[Account], salt: bytes) -> None:
+    def save(self, key: bytearray, accounts: List[Account], salt: bytes) -> None:
         """
         Speichert die Konten verschlüsselt in die JSON‑Datei.
         """
-        key = CryptoHelper.derive_key(password, salt)
-        plaintext = json.dumps([a.to_dict() for a in accounts]).encode()
-        ciphertext_b64 = CryptoHelper.encrypt(plaintext, key)
+        if key is None or len(key) != 32:
+            raise ValueError("Keine entsperrte Sitzung vorhanden.")
+        plaintext = bytearray(json.dumps([a.to_dict() for a in accounts]), "utf-8")
+        try:
+            ciphertext_b64 = CryptoHelper.encrypt(bytes(plaintext), key)
+        finally:
+            _wipe(plaintext)
 
         data_obj = {
             "salt": base64.urlsafe_b64encode(salt).decode(),
             "data": ciphertext_b64,
         }
 
-        tmp_path = self.file.with_suffix(".tmp")
-
-        with open(tmp_path, "w", encoding="utf-8") as f:
-            json.dump(data_obj, f)
-
-        os.replace(tmp_path, self.file)
+        _write_json(self.file, data_obj)
 
 
 # --------------------------------------------------------------------------- #
@@ -753,22 +825,28 @@ class AuthenticatorApp:
         self.remaining: int = COUNTDOWN_START
         self.data_store = DataStore(DATA_FILE)
 
-        self.master_password: Optional[str] = None
+        self.session_key: Optional[bytearray] = None
+        self._active_actions = 0
+        self._clipboard_code = None
+        self._clipboard_job = None
         self.salt: Optional[bytes] = None
         self.accounts: List[Account] = []
+
+        # Dialoge beim ersten Start (Login/Passwort-Setup) verwenden dieselben
+        # Fonts und Styles wie spätere Dialoge, z. B. nach der Zeitsperre.
+        self._apply_theme()
+        self._apply_global_font(self._font_size)
 
         if DATA_FILE.exists():
             self._login_dialog()
         else:
             self._setup_new_master()
 
-        self._apply_theme()
-        self._apply_global_font(self._font_size)
         self.remaining = COUNTDOWN_START
         self._build_main_window()
         self._update_otps()
 
-        self.last_activity = time.time()
+        self.last_activity = time.monotonic()
         self.inactivity_timeout = 5 * 60
 
         for event in ("<Key>", "<Button-1>", "<Motion>"):
@@ -782,6 +860,7 @@ class AuthenticatorApp:
         except KeyboardInterrupt:
             logging.info("Programm wird beendet.")
         finally:
+            self._clear_session()
             self.instance_lock.release()
 
     # ------------------------------------------------------------------ #
@@ -847,21 +926,65 @@ class AuthenticatorApp:
     # Inaktivitäts‑Management
     # ------------------------------------------------------------------ #
 
+    def _ask_master_password(self) -> Optional[str]:
+        """Zeigt die einheitliche Passwortabfrage für Start und Entsperren."""
+        return simpledialog.askstring(
+            f"2FA:TOTP - {__version__}",
+            "Bitte gib dein Master-Passwort ein:",
+            parent=self.root,
+            show="*",
+        )
+
     def _on_close(self) -> None:
         """Fenster wird geschlossen – Anwendung sauber beenden."""
+        self._clear_session()
         self.instance_lock.release()
         self.root.destroy()
 
+    def _clear_clipboard(self) -> None:
+        """Entfernt nur den zuletzt von uns kopierten Code."""
+        try:
+            if self._clipboard_job is not None:
+                self.root.after_cancel(self._clipboard_job)
+            if self._clipboard_code is not None and self.root.clipboard_get() == self._clipboard_code:
+                self.root.clipboard_clear()
+        except tk.TclError:
+            pass
+        finally:
+            self._clipboard_code = None
+            self._clipboard_job = None
+
+    def _clear_session(self) -> None:
+        self._clear_clipboard()
+        _wipe(self.session_key)
+        self.session_key = None
+        self.salt = None
+        for account in self.accounts:
+            account.secret = ""
+        self.accounts.clear()
+        try:
+            if hasattr(self, "search_var"):
+                self.search_var.set("")
+            self._refresh_tree()
+        except tk.TclError:
+            pass
+
     def _update_last_activity(self, event=None) -> None:
         """Setzt den Inaktivitäts‑Zeitstempel auf jetzt."""
-        self.last_activity = time.time()
+        self.last_activity = time.monotonic()
 
     def _check_inactivity(self) -> None:
         """
         Sperrt die App nach Ablauf des Inaktivitäts‑Timeouts.
         """
-        if (time.time() - self.last_activity) > self.inactivity_timeout:
+        if (time.monotonic() - self.last_activity) > self.inactivity_timeout:
             self.root.withdraw()
+            self._clear_session()
+            if self._active_actions:
+                # Ein modaler Dialog kann noch Klartext in lokalen Variablen
+                # halten. Beenden statt diese Aktion nach Login fortzusetzen.
+                self._on_close()
+                raise SystemExit(0)
 
             messagebox.showinfo(
                 "Sicherheit",
@@ -869,28 +992,8 @@ class AuthenticatorApp:
                 parent=self.root,
             )
 
-            while True:
-                pwd = simpledialog.askstring(
-                    "Passwort eingeben",
-                    "Bitte Master-Passwort:",
-                    parent=self.root,
-                    show="*",
-                )
-
-                if pwd is None:
-                    self.root.destroy()
-                    sys.exit()
-
-                try:
-                    accounts, salt = self.data_store.load(pwd)
-                    self.accounts = accounts
-                    self.salt = salt
-                    self.master_password = pwd
-                    break
-                except Exception as exc:
-                    messagebox.showerror("Fehler", f"Login fehlgeschlagen: {exc}", parent=self.root)
-
-            self.last_activity = time.time()
+            self._login_dialog()
+            self.last_activity = time.monotonic()
             self._refresh_tree()
             self.root.deiconify()
 
@@ -1151,27 +1254,27 @@ class AuthenticatorApp:
     def _login_dialog(self) -> None:
         """Zeigt den Login‑Dialog und lädt die Accounts."""
         while True:
-            pwd = simpledialog.askstring(
-                f"2FA:TOTP - {__version__}",
-                "Bitte gib dein Master-Passwort ein:",
-                parent=self.root,
-                show="*",
-            )
+            pwd = self._ask_master_password()
 
             if pwd is None:
                 self.root.destroy()
                 sys.exit()
 
             try:
-                accounts, salt = self.data_store.load(pwd)
-                self.master_password = pwd
+                accounts, salt, key = self.data_store.load(pwd)
+                pwd = None
+                self.session_key = key
                 self.salt = salt
                 self.accounts = accounts
                 break
             except ValueError as exc:
+                pwd = None
                 messagebox.showerror("Fehler", str(exc), parent=self.root)
             except Exception as exc:
+                pwd = None
                 messagebox.showerror("Unbekannter Fehler", str(exc), parent=self.root)
+            finally:
+                pwd = None
 
     def _setup_new_master(self) -> None:
         """Erstellt ein neues Master‑Passwort und initialisiert die Datenbank."""
@@ -1187,10 +1290,14 @@ class AuthenticatorApp:
             sys.exit()
 
         salt = os.urandom(SALT_SIZE)
-
+        key = None
         try:
-            self.data_store.save(pwd, [], salt)
+            key = CryptoHelper.derive_key(pwd, salt)
+            pwd = None
+            self.data_store.save(key, [], salt)
         except Exception as exc:
+            _wipe(key)
+            pwd = None
             messagebox.showerror(
                 "Fehler",
                 f"Datenbank konnte nicht erstellt werden:\n{exc}",
@@ -1199,7 +1306,7 @@ class AuthenticatorApp:
             self.root.destroy()
             sys.exit()
 
-        self.master_password = pwd
+        self.session_key = key
         self.salt = salt
         self.accounts = []
 
@@ -1580,7 +1687,7 @@ class AuthenticatorApp:
         Returns:
             bool: True bei Erfolg, False bei Fehler.
         """
-        if self.master_password is None or self.salt is None:
+        if self.session_key is None or self.salt is None:
             messagebox.showerror(
                 "Fehler",
                 "Keine Master-Passwort-Informationen vorhanden.",
@@ -1589,7 +1696,7 @@ class AuthenticatorApp:
             return False
 
         try:
-            self.data_store.save(self.master_password, self.accounts, self.salt)
+            self.data_store.save(self.session_key, self.accounts, self.salt)
         except Exception as exc:
             messagebox.showerror(
                 "Fehler beim Speichern",
@@ -1601,6 +1708,7 @@ class AuthenticatorApp:
         self._refresh_tree()
         return True
 
+    @_session_action
     def _add_account_dialog(self) -> None:
         """Öffnet den Dialog zum Hinzufügen eines neuen Accounts."""
         dialog = AccountDialog(self.root, title="Neuer Account")
@@ -1610,6 +1718,7 @@ class AuthenticatorApp:
             return
 
         name, info, firma, secret, hash_algo, digits, period = dialog.result
+        dialog.result = None
 
         new_account = Account(
             name=name,
@@ -1627,6 +1736,7 @@ class AuthenticatorApp:
             self.accounts.pop()
             self._refresh_tree()
 
+    @_session_action
     def _delete_selected_account(self) -> None:
         """Löscht den ausgewählten Account nach Bestätigung."""
         selected = self.tree.selection()
@@ -1654,7 +1764,10 @@ class AuthenticatorApp:
         if not self._save_accounts():
             self.accounts.insert(idx, removed)
             self._refresh_tree()
+        else:
+            removed.secret = ""
 
+    @_session_action
     def _edit_selected_account(self, idx: int) -> None:
         """Öffnet den Bearbeiten‑Dialog."""
         if idx < 0 or idx >= len(self.accounts):
@@ -1668,6 +1781,7 @@ class AuthenticatorApp:
             return
 
         name, info, firma, secret, hash_algo, digits, period = dialog.result
+        dialog.result = None
 
         new_account = Account(
             name=name,
@@ -1684,11 +1798,14 @@ class AuthenticatorApp:
         if not self._save_accounts():
             self.accounts[idx] = old_account
             self._refresh_tree()
+        else:
+            old_account.secret = ""
 
     # ------------------------------------------------------------------ #
     # Treeview‑Interaktion
     # ------------------------------------------------------------------ #
 
+    @_session_action
     def _on_tree_click(self, event) -> None:
         """
         Zeigt das OTP 5 Sekunden lang an und kopiert es in die Zwischenablage.
@@ -1727,8 +1844,11 @@ class AuthenticatorApp:
             return
 
         self.tree.set(row_id, "code", code)
+        self._clear_clipboard()
         self.root.clipboard_clear()
         self.root.clipboard_append(code)
+        self._clipboard_code = code
+        self._clipboard_job = self.root.after(15000, self._clear_clipboard)
         self.root.after(5000, lambda row=row_id: self._hide_code(row))
 
     def _hide_code(self, row_id: str) -> None:
@@ -1756,6 +1876,7 @@ class AuthenticatorApp:
     # Master‑Passwort ändern
     # ------------------------------------------------------------------ #
 
+    @_session_action
     def _change_master_password(self) -> None:
         """
         Ermöglicht das Ändern des Master‑Passworts.
@@ -1773,7 +1894,14 @@ class AuthenticatorApp:
         if pwd_current is None:
             return
 
-        if pwd_current != self.master_password:
+        check_key = None
+        try:
+            check_key = CryptoHelper.derive_key(pwd_current, self.salt)
+            valid = hmac.compare_digest(check_key, self.session_key)
+        finally:
+            pwd_current = None
+            _wipe(check_key)
+        if not valid:
             messagebox.showerror("Fehler", "Falsches Passwort.", parent=self.root)
             return
 
@@ -1788,10 +1916,14 @@ class AuthenticatorApp:
             return
 
         new_salt = os.urandom(SALT_SIZE)
-
+        new_key = None
         try:
-            self.data_store.save(new_pwd, self.accounts, new_salt)
+            new_key = CryptoHelper.derive_key(new_pwd, new_salt)
+            new_pwd = None
+            self.data_store.save(new_key, self.accounts, new_salt)
         except Exception as exc:
+            new_pwd = None
+            _wipe(new_key)
             messagebox.showerror(
                 "Fehler beim Speichern",
                 f"Master-Passwort wurde nicht geändert.\n\n{exc}",
@@ -1799,7 +1931,8 @@ class AuthenticatorApp:
             )
             return
 
-        self.master_password = new_pwd
+        _wipe(self.session_key)
+        self.session_key = new_key
         self.salt = new_salt
 
         messagebox.showinfo(
@@ -1845,9 +1978,10 @@ class AuthenticatorApp:
             period=int(info.get("period", DEFAULT_PERIOD)),
         )
 
+    @_session_action
     def _export_data(self) -> None:
         """Exportiert die Accounts als JSON, optional verschlüsselt."""
-        if not self.master_password or not self.salt:
+        if self.session_key is None or self.salt is None:
             messagebox.showerror(
                 "Fehler",
                 "Keine Master-Passwort-Informationen vorhanden.",
@@ -1865,12 +1999,23 @@ class AuthenticatorApp:
         if not save_path:
             return
 
+        if Path(save_path).resolve() in (DATA_FILE.resolve(), LOCK_FILE.resolve()):
+            messagebox.showerror("Export", "Die aktive Datenbank oder Sperrdatei darf nicht überschrieben werden.", parent=self.root)
+            return
+
         encrypt = messagebox.askyesno(
             "Exportieren",
             "Soll die Datei verschlüsselt werden?",
             icon="question",
             parent=self.root,
         )
+
+        if not encrypt and not messagebox.askyesno(
+            "Unverschlüsselter Export",
+            "Diese Datei enthält alle TOTP-Schlüssel im Klartext. Trotzdem exportieren?",
+            icon="warning", default="no", parent=self.root,
+        ):
+            return
 
         export_obj: dict[str, object] = {
             "version": 1,
@@ -1880,19 +2025,18 @@ class AuthenticatorApp:
 
         try:
             if encrypt:
-                key = CryptoHelper.derive_key(self.master_password, self.salt)
-                ciphertext_b64 = CryptoHelper.encrypt(json.dumps(export_obj).encode(), key)
+                ciphertext_b64 = CryptoHelper.encrypt(json.dumps(export_obj).encode(), self.session_key)
 
                 final_obj = {
                     "salt": base64.urlsafe_b64encode(self.salt).decode(),
                     "data": ciphertext_b64,
                 }
 
-                with open(save_path, "w", encoding="utf-8") as f:
-                    json.dump(final_obj, f, indent=2)
+                _write_json(Path(save_path), final_obj)
             else:
-                with open(save_path, "w", encoding="utf-8") as f:
-                    json.dump(export_obj, f, indent=2)
+                _write_json(Path(save_path), export_obj)
+
+            export_obj.clear()
 
             messagebox.showinfo(
                 "Exportieren",
@@ -1901,8 +2045,10 @@ class AuthenticatorApp:
             )
 
         except Exception as exc:
+            export_obj.clear()
             messagebox.showerror("Fehler beim Export", str(exc), parent=self.root)
 
+    @_session_action
     def _import_data(self) -> None:
         """
         Importiert Accounts aus einer JSON‑Datei.
@@ -1910,7 +2056,7 @@ class AuthenticatorApp:
         Fehlerhafte Accounts werden erkannt. Der Benutzer kann entscheiden,
         ob gültige Accounts trotzdem importiert und fehlerhafte übersprungen werden.
         """
-        if not self.master_password or not self.salt:
+        if self.session_key is None or self.salt is None:
             messagebox.showerror(
                 "Fehler",
                 "Keine Master-Passwort-Informationen vorhanden.",
@@ -1929,33 +2075,49 @@ class AuthenticatorApp:
             return
 
         try:
-            with open(import_path, "r", encoding="utf-8") as f:
-                raw = json.load(f)
+            raw = _read_json(Path(import_path))
         except Exception as exc:
             messagebox.showerror("Fehler beim Laden", str(exc), parent=self.root)
             return
 
         if isinstance(raw, dict) and {"salt", "data"} <= raw.keys():
-            export_salt = base64.urlsafe_b64decode(raw["salt"])
-            try_pwd = self.master_password
+            try:
+                export_salt = base64.b64decode(raw["salt"], altchars=b"-_", validate=True)
+                if len(export_salt) != SALT_SIZE:
+                    raise ValueError("Ungültiger Salt.")
+            except (ValueError, TypeError):
+                messagebox.showerror("Import", "Ungültiges verschlüsseltes Format.", parent=self.root)
+                return
+            # Nur bei gleichem Salt kann der Sitzungsschlüssel passen.
+            key = bytearray(self.session_key) if export_salt == self.salt else None
 
             while True:
-                try:
-                    key = CryptoHelper.derive_key(try_pwd, export_salt)
-                    plaintext = CryptoHelper.decrypt(raw["data"], key)
-                    raw = json.loads(plaintext.decode())
-                    break
-                except ValueError:
+                if key is None:
                     try_pwd = simpledialog.askstring(
                         "Passwort für verschlüsselte Datei",
-                        "Das aktuelle Master-Passwort kann die Datei nicht entschlüsseln.\n"
-                        "Bitte anderes Passwort eingeben:",
+                        "Bitte Passwort der verschlüsselten Datei eingeben:",
                         parent=self.root,
                         show="*",
                     )
-
                     if try_pwd is None:
                         return
+                    try:
+                        key = CryptoHelper.derive_key(try_pwd, export_salt)
+                    finally:
+                        try_pwd = None
+                plaintext = None
+                try:
+                    plaintext = bytearray(CryptoHelper.decrypt(raw["data"], key))
+                    raw = json.loads(plaintext)
+                    break
+                except ValueError:
+                    _wipe(key)
+                    _wipe(plaintext)
+                    messagebox.showerror("Import", "Falsches Passwort oder beschädigte Datei.", parent=self.root)
+                finally:
+                    _wipe(key)
+                    key = None
+                    _wipe(plaintext)
 
         if isinstance(raw, dict) and "db" in raw and "entries" in raw.get("db", {}):
             try:
@@ -1983,6 +2145,7 @@ class AuthenticatorApp:
             )
             return
 
+        raw = None
         imported: list[Account] = []
         import_errors: list[str] = []
 
@@ -1993,6 +2156,9 @@ class AuthenticatorApp:
                 imported.append(_validate_and_normalize_account(acct))
             except Exception as exc:
                 import_errors.append(f"{index}. {label}: {exc}")
+
+        imported_raw.clear()
+        acct = None
 
         if import_errors:
             if not imported:
@@ -2038,7 +2204,7 @@ class AuthenticatorApp:
             self.accounts = list(by_key.values())
 
         try:
-            self.data_store.save(self.master_password, self.accounts, self.salt)
+            self.data_store.save(self.session_key, self.accounts, self.salt)
         except Exception as exc:
             self.accounts = old_accounts
             self._refresh_tree()
@@ -2046,6 +2212,7 @@ class AuthenticatorApp:
             messagebox.showerror("Fehler beim Speichern", str(exc), parent=self.root)
             return
 
+        old_accounts.clear()
         self._refresh_tree()
 
         if import_errors:
@@ -2189,7 +2356,7 @@ class AccountDialog(tk.Toplevel):
         self.firma_entry.grid(row=2, column=1, padx=8, pady=6, sticky="ew")
 
         ttk.Label(self, text="TOTP-Schlüssel:").grid(row=3, column=0, padx=8, pady=6, sticky="e")
-        self.secret_entry = ttk.Entry(self, width=34)
+        self.secret_entry = ttk.Entry(self, width=34, show="*")
         self.secret_entry.grid(row=3, column=1, padx=8, pady=6, sticky="ew")
 
         next_row = 4
@@ -2267,6 +2434,11 @@ class AccountDialog(tk.Toplevel):
         self.update_idletasks()
         self._center_on_parent(parent)
 
+    def destroy(self) -> None:
+        if hasattr(self, "secret_entry"):
+            self.secret_entry.delete(0, tk.END)
+        super().destroy()
+
     def _center_on_parent(self, parent: tk.Widget) -> None:
         """Zentriert den Dialog relativ zum Parent-Fenster."""
         try:
@@ -2330,7 +2502,7 @@ class AccountDialog(tk.Toplevel):
         if not parsed.get("secret"):
             messagebox.showwarning(
                 "QR-Code",
-                f"Kein gültiger otpauth-URI gefunden:\n{decoded[0]}",
+                "Kein gültiger otpauth-URI gefunden.",
                 parent=self,
             )
             return
@@ -2378,7 +2550,8 @@ class AccountDialog(tk.Toplevel):
             return
 
         try:
-            self._fill_from_qr_image(Image.open(path))
+            with Image.open(path) as img:
+                self._fill_from_qr_image(img)
         except Exception as exc:
             messagebox.showerror("Fehler", str(exc), parent=self)
 
@@ -2471,14 +2644,13 @@ class EditAccountDialog(AccountDialog):
         """
         Überschreibt die Basismethode.
 
-        Nach QR-Scan wird der neue Secret sichtbar angezeigt, damit der Nutzer
-        sieht, dass etwas übernommen wurde.
+        Auch nach QR-Scan bleibt der neue Schlüssel maskiert.
         """
         super()._fill_from_qr_image(img)
 
         if self.secret_entry.get().strip():
-            self.show_var.set(True)
-            self.secret_entry.configure(show="")
+            self.show_var.set(False)
+            self.secret_entry.configure(show="*")
 
     # _ok() wird unverändert von AccountDialog geerbt – identische Validierung.
 

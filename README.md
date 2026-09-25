@@ -39,7 +39,7 @@ Datenbank wird im gleichen Ordner erstellt:
 authenticator_data.json
 ```
 
-Zusätzlich wird während der Laufzeit eine Lock-Datei verwendet, um parallele App-Instanzen zu verhindern:
+Zusätzlich wird eine Lock-Datei verwendet, um parallele App-Instanzen zu verhindern. Die Datei bleibt nach dem Beenden bestehen; entscheidend ist die vom Betriebssystem gehaltene Sperre:
 
 ```text
 authenticator_data.lock
@@ -109,6 +109,24 @@ In der GUI: Rechtsklick → **Bearbeiten**.
 - **Single-Instance-Lock**: Verhindert parallele Schreibzugriffe durch mehrere App-Instanzen
 - **Lokale Datenspeicherung**: Keine Cloud, alle Daten bleiben auf Ihrem Gerät
 - **Master-Passwort**: Wird nicht gespeichert, sondern nur zur Schlüsselableitung genutzt
+
+### Arbeitsspeicher und Sitzungssperre
+
+- Das Master-Passwort wird nach der Schlüsselableitung nicht als Sitzungszustand aufbewahrt. Speichern und verschlüsselter Export verwenden den abgeleiteten 256-Bit-Schlüssel in einem überschreibbaren `bytearray`.
+- Dieser Schlüssel und die TOTP-Schlüssel werden während der entsperrten Sitzung benötigt. Der Sitzungsschlüssel ermöglicht die Entschlüsselung der Datenbank und ist entsprechend genauso schützenswert wie das Passwort.
+- Bei Inaktivität und beim Beenden wird der eigene Schlüsselpuffer mit Nullen überschrieben. Account-Referenzen und sichtbare Daten werden entfernt. Beim Entsperren wird die Datenbank neu geladen.
+- Läuft die Inaktivitätsfrist während eines offenen Account-, Import-, Export- oder Passwortdialogs ab, wird die Anwendung beendet. Dadurch können pausierte Dialogfunktionen keine alten Geheimnisse in die nächste Sitzung übernehmen. Noch nicht bestätigte Eingaben gehen verloren.
+- Kopierte Codes werden nach 15 Sekunden sowie beim Sperren/Beenden aus der Zwischenablage entfernt, sofern dort noch derselbe Code steht. Zwischenablageverlauf und externe Clipboard-Manager können eigene Kopien behalten.
+- Neue Passwörter dürfen nicht leer sein. Beim Passwortwechsel wird das aktuelle Passwort durch erneute Schlüsselableitung geprüft; der alte Sitzungsschlüssel wird erst nach erfolgreichem Speichern überschrieben.
+- TOTP-Eingabefelder sind standardmäßig maskiert, auch nach QR-Import. Das Schlüsselfeld wird vor dem Zerstören des Dialogs geleert.
+
+**Grenzen:** Python-Strings und `bytes` sind unveränderlich. Tkinter, JSON, PyOTP und die Kryptografie-Bibliotheken können interne Kopien anlegen, die dieses Programm nicht zuverlässig überschreiben kann. Das Entfernen einer Referenz garantiert keine physische Speicherlöschung. Es gibt keinen vollständigen Schutz vor Prozessspeicherzugriff, Speicherauslagerung, Ruhezustandsdateien oder Speicherabbildern. Ein entsperrter Authenticator muss TOTP-Schlüssel verarbeiten können. Die Bereinigung reduziert die Lebensdauer und Anzahl eigener Kopien, ist aber keine garantierte Löschung aller Geheimnisse. Während synchroner Rechen- oder Dateioperationen kann Tkinter die Inaktivitätssperre erst nach deren Rückkehr ausführen.
+
+Das bestehende Dateiformat und die Argon2-Parameter bleiben unverändert. Dateien sind auf 16 MiB begrenzt. Speichern erfolgt über eine zufällige temporäre Datei und atomaren Austausch. Unter POSIX haben neue Dateien nur Benutzerrechte (`0600`); unter Windows gelten die geerbten Verzeichnisrechte. Ein Klartextexport benötigt eine zusätzliche ausdrückliche Bestätigung. Die aktive Datenbank und ihre Lock-Datei können nicht als Exportziel verwendet werden.
+
+Technische Referenzen: [Argon2-Schlüsselableitung](https://argon2-cffi.readthedocs.io/en/stable/api.html), [AES-GCM](https://cryptography.io/en/stable/hazmat/primitives/aead/).
+
+Sicherheitsregressionen prüfen: `python -m unittest discover -s tests -v`. Die Tests verwenden ausschließlich synthetische Daten und temporäre Dateien; die Argon2-Kosten werden nur für Tests reduziert. Die Dialogsteuerung wird dabei simuliert.
 
 ### Funktionen
 
@@ -329,5 +347,6 @@ Nutzen Sie sie auf eigene Verantwortung.
 
 ---
 
-**Version**: 1.5.0  
-**Letzte Aktualisierung**: 2026-07-02
+**Version**: 1.8
+
+**Letzte Aktualisierung**: 2026-09-25
