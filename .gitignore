@@ -1,0 +1,35 @@
+# Local authenticator data and lock files
+/authenticator_data.json
+/authenticator_data.lock
+/authenticator_data.tmp
+/.2fa-*
+
+# Local tests and test dependencies
+/tests/
+/.test-deps/
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+
+# Python bytecode and virtual environments
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+
+# Local environment variables
+.env
+.env.*
+!.env.example
+
+# Build artifacts
+build/
+dist/
+*.egg-info/
+
+# Operating system files
+.DS_Store
+Thumbs.db
+Desktop.ini
