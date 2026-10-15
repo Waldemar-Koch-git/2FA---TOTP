@@ -347,6 +347,6 @@ Nutzen Sie sie auf eigene Verantwortung.
 
 ---
 
-**Version**: 1.8
+**Version**: 1.9
 
-**Letzte Aktualisierung**: 2026-09-25
+**Letzte Aktualisierung**: 2026-10-15

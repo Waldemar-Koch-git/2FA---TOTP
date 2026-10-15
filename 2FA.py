@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 
-__version__ = "v1.8"
+__version__ = "v1.9"
 """
 2FA Authenticator :: TOTP – Desktop‑Anwendung
 
@@ -22,8 +22,8 @@ optional für QR-Code-Scan:
 
 Author      : Waldemar Koch
 Created     : 2025-08-09
-Last Update : 2026-09-25
-Version     : 1.8
+Last Update : 2026-10-15
+Version     : 1.9
 License     : Custom Non-Commercial License
               MIT-style terms, but non-commercial use only.
               This is not the MIT License and not OSI-approved.
@@ -978,7 +978,6 @@ class AuthenticatorApp:
         Sperrt die App nach Ablauf des Inaktivitäts‑Timeouts.
         """
         if (time.monotonic() - self.last_activity) > self.inactivity_timeout:
-            self.root.withdraw()
             self._clear_session()
             if self._active_actions:
                 # Ein modaler Dialog kann noch Klartext in lokalen Variablen
@@ -986,6 +985,9 @@ class AuthenticatorApp:
                 self._on_close()
                 raise SystemExit(0)
 
+            # Das geleerte Hauptfenster bleibt als Taskleisten-Einstieg erhalten.
+            # Auch aus dem minimierten Zustand vor den modalen Dialogen anzeigen.
+            self.root.deiconify()
             messagebox.showinfo(
                 "Sicherheit",
                 f"Nach {self.inactivity_timeout // 60} Minuten Inaktivität erneut anmelden!",
